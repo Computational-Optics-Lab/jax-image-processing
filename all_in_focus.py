@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from chex import Array
-from jax_demosiac import get_bayer_mask, jax_bayer2GRAY
+from color_manipulation import get_bayer_mask, jax_bayer2GRAY
 
 from scipy.signal.windows import gaussian
 
