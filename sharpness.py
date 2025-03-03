@@ -155,7 +155,7 @@ class laplace_engine:
         k = self.calculator(zero_slice, self.kernel)
         del k, zero_slice
 
-    def find_best_z(self, data):
+    def get_metric(self, data):
         datak = np.reshape(data.values, (data.shape[0], -1, 3072, 3072))
         metrics = []
         for j in range(datak.shape[1] // self.batch_size):
@@ -168,11 +168,12 @@ class laplace_engine:
 
         return (
             jnp.hstack(metrics)
-            .argmax(axis=0)
-            .reshape((data.shape[1], data.shape[2]))
-            # reshape((data.shape[0], data.shape[1], data.shape[2]))
+            .reshape((data.shape[0], data.shape[1], data.shape[2]))
         )
 
+    def find_best_z(self, data):
+        metrics = self.get_metric(data)
+        return jnp.argmax(metrics, axis=0)
 
 def _process_one_zslice(data_slice, ksize, batch_size):
     batches = jnp.arange(0, data_slice.shape[0], batch_size)
