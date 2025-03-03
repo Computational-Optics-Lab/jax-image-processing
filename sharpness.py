@@ -119,8 +119,21 @@ def downsample_bayer_sml(bayer_image: Array, kernel: Array) -> Array:
         kernel: 2D laplace kernel
     """
     # kernels in x- and y -direction for Laplacian
-    ky = jnp.array(([0.0, -1.0, 0.0], [0.0, 2.0, 0.0], [0.0, -1.0, 0.0]))
-    kx = jnp.array(([0.0, 0.0, 0.0], [-1.0, 2.0, -1.0], [0.0, 0.0, 0.0]))
+    # kernels in x- and y -direction for Laplacian
+    kx = jnp.array(
+        [
+            [2, 0, -2],
+            [8, 0, -8],
+            [2, 0, -2],
+        ]
+    )
+    ky = jnp.array(
+        [
+            [2, 8, 2],
+            [0, 0, 0],
+            [-2, -8, -2],
+        ]
+    )
     # add absoulte of image convolved with kx to absolute
     # of image convolved with ky (modified laplacian)
     ml_img = jnp.abs(
