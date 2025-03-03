@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 from chex import Array
 
-__all__ = ["get_bayer_mask", "jax_bayer2GRAY", "jax_bayer2RGB", "RGB2bayer"]
+__all__ = ["get_bayer_mask", "jax_bayer2GRAY", "jax_bayer2RGB", "jax_RGB2bayer"]
 
 
 def get_bayer_mask(shape: Tuple[int, int]) -> Tuple[Array, Array, Array]:
@@ -136,7 +136,7 @@ def jax_bayer2RGB(image: Array, mask: Tuple[Array, Array, Array]) -> Array:
     return jnp.stack([R, G, B], axis=-1)
 
 
-def RGB2bayer(rgb_image: Array, mask: Tuple[Array, Array, Array]) -> Array:
+def jax_RGB2bayer(rgb_image: Array, mask: Tuple[Array, Array, Array]) -> Array:
     """
     Converts an RGB image to Bayer pattern using the provided mask pattern.
 
