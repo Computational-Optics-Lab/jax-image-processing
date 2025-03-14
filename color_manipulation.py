@@ -158,43 +158,44 @@ def jax_RGB2bayer(rgb_image: Array, mask: Tuple[Array, Array, Array]) -> Array:
     return R + G + B
 
 
-if __name__ == "__main__":
-    import os
-    from time import time
+def jax_RGB2HSV(rgb_image):
+    """
+    Convert RGB to HSV.
 
-    import cv2
+    Parameters:
+      rgb_image: RGB image with components in the range [0, 255].
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+    Returns:
+      h: Hue in degrees [0, 360)
+      s: Saturation in [0, 1]
+      v: Value in [0, 1]
+    """
+    # Normalize to [0,1]
+    rgb_image = rgb_image / 255.0
+    r, g, b = rgb_image[..., 0], rgb_image[..., 1], rgb_image[..., 2]
 
-    image = np.random.randint(255, size=(80, 3072, 3072), dtype=np.uint8)
-    print(len(image))
+    # Compute the maximum and minimum of r, g, b
+    max_val = jnp.maximum(jnp.maximum(r, g), b)
+    min_val = jnp.minimum(jnp.minimum(r, g), b)
+    delta = max_val - min_val
 
-    bayer_mask = get_bayer_mask(image.shape[-2:])
-    print(bayer_mask.shape)
+    # Compute hue
+    h = jnp.where(
+        delta == 0,
+        0.0,
+        jnp.where(
+            max_val == r,
+            60.0 * jnp.mod((g - b) / delta, 6.0),
+            jnp.where(
+                max_val == g,
+                60.0 * (((b - r) / delta) + 2.0),
+                60.0 * (((r - g) / delta) + 4.0),
+            ),
+        ),
+    )
 
-    strt = time()
-    debayer = []
-    for i in range(image.shape[0]):
-        debayer.append(cv2.cvtColor(image[i], cv2.COLOR_BayerGR2GRAY))
-    debayer = np.array(debayer)
-    end = time()
-    print("cv2: ", end - strt)
-    print(debayer.shape)
-    del debayer
-
-    test = np.random.randint(255, size=(32, 3072, 3072))
-    vmap_debayer = jax.vmap(jax_bayer2GRAY, in_axes=(0, None))
-    jit_debayer = jax.jit(vmap_debayer)
-    jit_debayer(test, bayer_mask)
-    del test
-
-    strt = time()
-    out = []
-    for i in range(image.shape[0] // 32):
-        zslice = jit_debayer(image[i * 32 : (i + 1) * 32], bayer_mask)
-        out.append(zslice)
-    end = time()
-    print("jax: ", end - strt)
-
-    out = np.concatenate(out, axis=0)
-    print(out.shape)
+    # Compute saturation
+    s = jnp.where(max_val == 0, 0.0, delta / max_val)
+    # Value is the maximum
+    v = max_val
+    return jnp.stack([h, s, v], axis=-1)
