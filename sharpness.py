@@ -6,6 +6,8 @@ import jax.numpy as jnp
 import numpy as np
 from chex import Array
 
+from color_manipulation import jax_bayer2GRAY
+
 __all__ = ["get_opencv_laplace_kernel", "calculate_laplacian", "laplace_engine"]
 
 
@@ -163,7 +165,7 @@ def downsample_bayer_sml(bayer_image: Array, kernel: Array) -> Array:
     return jnp.mean(jax.scipy.signal.convolve2d(ml_img, jnp.ones((3, 3)), mode="same"))
 
 
-# try a laplacian class to A. have a single callable method for calculating the laplcian
+# try a laplacian class to A) have a single callable method for calculating the laplcian
 # in the acquistion code rather than setting up loops in there, and B. to see if this
 # allows for a warmup (which is not happening, probably because of lax.scan)
 
@@ -187,10 +189,17 @@ class laplace_engine:
         calculator (Callable): JIT-compiled Laplacian calculation function
     """
 
-    def __init__(self, ksize, data_shape=(50, 6, 6, 3072, 3072), batch_size=3):
+    def __init__(
+        self,
+        sharpness_function: str = "downsample_bayer_sml",
+        ksize: int = 3,
+        data_shape: tuple = (50, 6, 6, 3072, 3072),
+        batch_size: int = 3,
+    ):
         self.kernel = get_opencv_laplace_kernel(ksize)
         self.batch_size = batch_size  # 3 works best with 50 slices on the DUMC system
-        self.calculator = jax.jit(downsample_bayer_laplacian)
+        function = globals()[sharpness_function]
+        self.calculator = jax.jit(function)
         zero_slice = jnp.zeros(
             (data_shape[0], self.batch_size, data_shape[3], data_shape[4]),
         )
@@ -217,9 +226,8 @@ class laplace_engine:
                 )
             )
 
-        return (
-            jnp.hstack(metrics)
-            .reshape((data.shape[0], data.shape[1], data.shape[2]))
+        return jnp.hstack(metrics).reshape(
+            (data.shape[0], data.shape[1], data.shape[2])
         )
 
     def find_best_z(self, data):
@@ -234,6 +242,7 @@ class laplace_engine:
         """
         metrics = self.get_metric(data)
         return jnp.argmax(metrics, axis=0)
+
 
 def _process_one_zslice(data_slice, ksize, batch_size):
     """
