@@ -152,9 +152,26 @@ class all_in_focus:
         batch_size_x: int = 3,
         batch_size_y: int = 3,
     ) -> None:
+        """
+        Initializes the all_in_focus processor for computing all-in-focus images
+        from stacks of 2D images along the Z-axis.
+        
+        Args:
+            data_shape: Shape of the input data in the form (Z, Y, X, H, W), where:
+                - Z: Number of images in the focus stack
+                - Y: Number of cameras along the vertical axis of the camera array
+                - X: Number of cameras along the horizontal axis of the camera array
+                - H: Image height (in pixels)
+                - W: Image width (in pixels)
+        """
         self.debayering = debayering
         if debayering:
+            # Generate Bayer mask if debayering is enabled
             self.bayer_mask = get_bayer_mask(data_shape[-2:])
+        else:
+            # Set to None or dummy value if debayering is disabled
+            self.bayer_mask = None
+
         self.batch_size_x = batch_size_x
         self.batch_size_y = batch_size_y
         self.gausskernel = _gkern(gkernel_size, gkernel_sig)
