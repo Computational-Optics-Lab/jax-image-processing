@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from chex import Array
+import warnings
 
 from color_manipulation import jax_bayer2GRAY
 
@@ -29,7 +30,7 @@ def get_opencv_laplace_kernel(ksize: int = 1) -> Array:
     impulse[blocksize // 2 + 1, blocksize // 2 + 1] = 1
     kernel = cv2.Laplacian(impulse, cv2.CV_32F, ksize=ksize)
     # crop this down to blocksize and return
-    return jnp.array(kernel[1:-1, 1:-1])
+    return jnp.array(kernel[1:-1, 1:-1], dtype=jnp.bfloat16)
 
 
 def calculate_laplacian(image: Array, ksize: int) -> Array:
@@ -46,7 +47,7 @@ def calculate_laplacian(image: Array, ksize: int) -> Array:
         Array: 2D array of same shape as input containing Laplacian values
     """
     kernel = get_opencv_laplace_kernel(ksize=ksize)
-    return jax.scipy.signal.convolve2d(image, kernel, mode="same")
+    return jax.scipy.signal.convolve2d(image, kernel, mode="same", precision="fastest")
 
 
 @partial(jax.vmap, in_axes=(0, None))
@@ -66,10 +67,22 @@ def downsample_bayer_laplacian(bayer_image: Array, kernel: Array) -> Array:
         float: Mean value of the thresholded and locally averaged Laplacian
     """
     metric = jnp.abs(
-        jax.scipy.signal.convolve2d(bayer_image[1::2, ::2], kernel, mode="same")
+        jax.scipy.signal.convolve2d(
+            bayer_image[::2, ::2].astype(jnp.bfloat16),
+            kernel,
+            mode="same",
+            precision="fastest",
+        )
     )
-    metric = metric * (metric > 100)
-    return jnp.mean(jax.scipy.signal.convolve2d(metric, jnp.ones((3, 3)), mode="same"))
+    metric = metric * (metric > jnp.bfloat16(100))
+    return jnp.mean(
+        jax.scipy.signal.convolve2d(
+            metric,
+            jnp.ones((3, 3), dtype=jnp.bfloat16),
+            mode="same",
+            precision="fastest",
+        )
+    )
 
 
 @partial(jax.vmap, in_axes=(0, None, None))
@@ -91,8 +104,10 @@ def downsample_debayer_laplacian(
     Returns:
         float: Variance of the Laplacian values in the debayered image
     """
-    gray_im = jax_bayer2GRAY(bayer_image, bayer_mask)
-    return jnp.var(jax.scipy.signal.convolve2d(gray_im, kernel, mode="same"))
+    gray_im = jax_bayer2GRAY(bayer_image, bayer_mask).astype(jnp.bfloat16)
+    return jnp.var(
+        jax.scipy.signal.convolve2d(gray_im, kernel, mode="same", precision="fastest")
+    )
 
 
 @partial(jax.vmap, in_axes=(0, None))
@@ -111,11 +126,12 @@ def downsample_bayer_nv(bayer_image: Array, kernel: Array) -> Array:
     Returns:
         float: Normalized variance (variance/mean) of the selected ROI
     """
-    return jnp.var(bayer_image[511:2559:2, 512:2560:2]) / jnp.mean(
-        bayer_image[511:2559:2, 512:2560:2]
-    )
+    bayer_image = bayer_image
+    roi = bayer_image[511:2559:2, 512:2560:2].astype(jnp.bfloat16)
+    return jnp.var(roi) / jnp.mean(roi)
 
 
+# @partial(jax.vmap, in_axes=(0, None))
 @partial(jax.vmap, in_axes=(0, None))
 @partial(jax.vmap, in_axes=(0, None))
 def downsample_bayer_sml(bayer_image: Array, kernel: Array) -> Array:
@@ -133,36 +149,50 @@ def downsample_bayer_sml(bayer_image: Array, kernel: Array) -> Array:
         float: Mean of thresholded and box-filtered SML values
     """
     # kernels in x- and y -direction for Laplacian
-    # kernels in x- and y -direction for Laplacian
     kx = jnp.array(
         [
             [2, 0, -2],
             [8, 0, -8],
             [2, 0, -2],
-        ]
+        ],
+        dtype=jnp.bfloat16,
     )
     ky = jnp.array(
         [
             [2, 8, 2],
             [0, 0, 0],
             [-2, -8, -2],
-        ]
+        ],
+        dtype=jnp.bfloat16,
     )
     # add absoulte of image convolved with kx to absolute
     # of image convolved with ky (modified laplacian)
     ml_img = jnp.abs(
         jax.scipy.signal.convolve2d(
-            bayer_image[255:2815:2, 256:2816:2], kx, mode="same"
+            bayer_image[255:2815:2, 256:2816:2].astype(jnp.bfloat16),
+            kx,
+            mode="same",
+            precision="fastest",
         )
     ) + jnp.abs(
         jax.scipy.signal.convolve2d(
-            bayer_image[255:2815:2, 256:2816:2], ky, mode="same"
+            bayer_image[255:2815:2, 256:2816:2].astype(jnp.bfloat16),
+            ky,
+            mode="same",
+            precision="fastest",
         )
     )
     # threhold the modified laplacian image
-    ml_img = ml_img * (ml_img > 1)
+    ml_img = ml_img * (ml_img > jnp.bfloat16(1))
     # apply 2d box filter to the thresholded image
-    return jnp.mean(jax.scipy.signal.convolve2d(ml_img, jnp.ones((3, 3)), mode="same"))
+    return jnp.mean(
+        jax.scipy.signal.convolve2d(
+            ml_img,
+            jnp.ones((3, 3), dtype=jnp.bfloat16),
+            mode="same",
+            precision="fastest",
+        )
+    )
 
 
 # try a laplacian class to A) have a single callable method for calculating the laplcian
@@ -202,6 +232,7 @@ class laplace_engine:
         self.calculator = jax.jit(function)
         zero_slice = jnp.zeros(
             (data_shape[0], self.batch_size, data_shape[3], data_shape[4]),
+            dtype=jnp.bfloat16,
         )
         k = self.calculator(zero_slice, self.kernel)
         del k, zero_slice
